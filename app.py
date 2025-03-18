@@ -11,8 +11,8 @@ app = Flask(__name__)
 executor = ThreadPoolExecutor(max_workers=5)
 
 # Configuration Spotify
-SPOTIFY_CLIENT_ID = '7b0ec8040813480887b5d5e6180c1993'  # Remplacer par votre client ID
-SPOTIFY_CLIENT_SECRET = 'ada62d5ebed645c68bf6e2562a014ebf'  # Remplacer par votre client secret
+SPOTIFY_CLIENT_ID = ''  # Remplacer par votre client ID
+SPOTIFY_CLIENT_SECRET = ''  # Remplacer par votre client secret
 
 # Initialisation de l'API Spotify
 sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
