@@ -18,7 +18,7 @@
 1. **Créez un compte Spotify Developer** :
    - Allez sur le [**Spotify Developer Dashboard**](https://developer.spotify.com/dashboard) et connectez-vous avec votre compte **Spotify**. **(Pas besoin d'un compte Premium !)**
    
-   > 🌟 *Si vous n'avez pas encore de compte Spotify, créez-en un gratuitement !*
+   > 🌟 *Si vous n'avez pas encore de compte Spotify, créez-en un gratuitement !* Vous aurez besoin de ce compte pour récupérer le nom des morceaux dans les playlists, ce qui permet d'intégrer correctement vos playlists Spotify dans **OpenMusicPlayer**.
 
 2. **Créez une application** :
    - Cliquez sur **"Create an App"**, donnez un joli nom à votre application (par exemple, "OpenMusicPlayer"), puis sauvegardez les paramètres.
