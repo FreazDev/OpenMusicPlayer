@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session
 from yt_dlp import YoutubeDL
 import os
 import json
@@ -8,11 +8,12 @@ from spotipy.oauth2 import SpotifyClientCredentials
 import logging
 
 app = Flask(__name__)
+app.secret_key = '1234567890'  # Add a secret key for session management
 executor = ThreadPoolExecutor(max_workers=5)
 
 # Configuration Spotify
-SPOTIFY_CLIENT_ID = ''  # Remplacer par votre client ID
-SPOTIFY_CLIENT_SECRET = ''  # Remplacer par votre client secret
+SPOTIFY_CLIENT_ID = '7b0ec8040813480887b5d5e6180c1993'
+SPOTIFY_CLIENT_SECRET = 'ada62d5ebed645c68bf6e2562a014ebf'
 
 # Initialisation de l'API Spotify
 sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
@@ -33,6 +34,32 @@ ydl_opts = {
 }
 
 PLAYLIST_FILE = 'playlists.json'
+THEME_FILE = 'theme.json'
+audio_cache = {}  # Cache pour les URLs audio préchargées
+
+def get_audio_url(video_id):
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            return {
+                'url': info['url'],
+                'title': info['title']
+            }
+    except Exception as e:
+        print(f"Error getting audio URL: {str(e)}")
+        return None
+
+def preload_next_song(playlist_name, current_index):
+    if playlist_name not in playlists:
+        return
+    
+    playlist = playlists[playlist_name]
+    if current_index + 1 < len(playlist):
+        next_song_id = playlist[current_index + 1]['id']
+        if next_song_id not in audio_cache:
+            audio_info = get_audio_url(next_song_id)
+            if audio_info:
+                audio_cache[next_song_id] = audio_info
 
 def load_playlists():
     if os.path.exists(PLAYLIST_FILE):
@@ -68,6 +95,64 @@ def search():
             print(f"Search error: {str(e)}")
             return jsonify({'success': False, 'error': 'Search failed'})
 
+@app.route('/play/<video_id>')
+def play(video_id):
+    playlist_name = request.args.get('playlist')
+    current_index = int(request.args.get('index', -1))
+    
+    if video_id in audio_cache:
+        info = audio_cache.pop(video_id)
+        if playlist_name and current_index >= 0:
+            executor.submit(preload_next_song, playlist_name, current_index)
+        return jsonify({
+            'success': True,
+            'audio_url': info['url'],
+            'title': info['title']
+        })
+    
+    try:
+        info = get_audio_url(video_id)
+        if info:
+            if playlist_name and current_index >= 0:
+                executor.submit(preload_next_song, playlist_name, current_index)
+            return jsonify({
+                'success': True,
+                'audio_url': info['url'],
+                'title': info['title']
+            })
+        return jsonify({'success': False, 'error': 'Could not get audio URL'})
+    except Exception as e:
+        print(f"Play error: {str(e)}")
+        return jsonify({'success': False, 'error': 'Stream failed'})
+
+@app.route('/save-theme', methods=['POST'])
+def save_theme():
+    theme = request.json.get('theme')
+    if theme:
+        try:
+            with open(THEME_FILE, 'w') as f:
+                json.dump(theme, f)
+            return jsonify({'success': True})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
+    return jsonify({'success': False, 'error': 'Invalid theme data'})
+
+@app.route('/get-theme', methods=['GET'])
+def get_theme():
+    try:
+        with open(THEME_FILE, 'r') as f:
+            theme = json.load(f)
+        return jsonify({'success': True, 'theme': theme})
+    except:
+        default_theme = {
+            'primary': '#fca606',
+            'background': '#121212',
+            'text': '#ffffff'
+        }
+        with open(THEME_FILE, 'w') as f:
+            json.dump(default_theme, f)
+        return jsonify({'success': True, 'theme': default_theme})
+
 @app.route('/import-spotify', methods=['POST'])
 def import_spotify_playlist():
     spotify_url = request.json.get('url')
@@ -75,36 +160,29 @@ def import_spotify_playlist():
         return jsonify({'success': False, 'error': 'URL manquante'})
     
     try:
-        # Extraire l'ID de la playlist depuis l'URL
         playlist_id = spotify_url.split('playlist/')[1].split('?')[0]
         
         try:
-            # Récupérer les informations de la playlist
             playlist = sp.playlist(playlist_id)
             playlist_name = playlist['name']
             
-            # Vérifier si la playlist existe déjà
             if playlist_name in playlists:
                 playlist_name = f"{playlist_name}_{len(playlists)}"
             
             playlists[playlist_name] = []
             
-            # Récupérer tous les morceaux
             results = sp.playlist_tracks(playlist_id)
             tracks = results['items']
             
-            # Gérer les playlists de plus de 100 morceaux
             while results['next']:
                 results = sp.next(results)
                 tracks.extend(results['items'])
             
-            # Pour chaque morceau, chercher sur YouTube
             for item in tracks:
                 track = item['track']
-                if not track:  # Skip if track is None or local file
+                if not track:
                     continue
                 
-                # Construire le titre de recherche
                 artists = [artist['name'] for artist in track['artists']]
                 search_query = f"{track['name']} {' '.join(artists)}"
                 
@@ -122,7 +200,6 @@ def import_spotify_playlist():
                         logging.error(f"Erreur YouTube pour {search_query}: {str(e)}")
                         continue
             
-            # Sauvegarder la playlist
             save_playlists(playlists)
             return jsonify({
                 'success': True,
@@ -136,20 +213,6 @@ def import_spotify_playlist():
     except Exception as e:
         logging.error(f"Erreur d'importation: {str(e)}")
         return jsonify({'success': False, 'error': 'Erreur lors de l\'importation'})
-
-@app.route('/play/<video_id>')
-def play(video_id):
-    try:
-        with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            return jsonify({
-                'success': True,
-                'audio_url': info['url'],
-                'title': info['title']
-            })
-    except Exception as e:
-        print(f"Play error: {str(e)}")
-        return jsonify({'success': False, 'error': 'Stream failed'})
 
 @app.route('/playlist', methods=['POST'])
 def create_playlist():
