@@ -1,4 +1,4 @@
-Description du projet : OpenMusicPlayer basé sur YouTube et Spotify
+OpenMusicPlayer basé sur YouTube et Spotify
 OpenMusicPlayer est une application gratuite et open-source qui permet aux utilisateurs de créer, importer et gérer des playlists musicales en utilisant à la fois YouTube et Spotify. L'application utilise Flask pour créer une interface web simple et des APIs pour interagir avec les services externes, notamment yt-dlp pour récupérer des vidéos audio de YouTube et Spotipy pour interagir avec l'API de Spotify.
 
 Fonctionnalités principales :
