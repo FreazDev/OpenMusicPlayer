@@ -38,3 +38,9 @@
    # Configuration Spotify
    SPOTIFY_CLIENT_ID = 'votre_client_id_ici'  # Remplacer par votre Client ID
    SPOTIFY_CLIENT_SECRET = 'votre_client_secret_ici'  # Remplacer par votre Client Secret
+📝 Copyright
+Créé par Freaz.
+
+Ce projet est open-source et sous licence MIT. Vous pouvez l'utiliser, le modifier et le redistribuer selon les termes de la licence.
+
+Copyright (c) Freaz. Tous droits réservés.
