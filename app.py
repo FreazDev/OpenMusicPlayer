@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, send_file
 from yt_dlp import YoutubeDL
 import os
 import json
@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import logging
+import zipfile
 
 app = Flask(__name__)
 app.secret_key = '1234567890'  # Add a secret key for session management
@@ -35,6 +36,7 @@ ydl_opts = {
 
 PLAYLIST_FILE = 'playlists.json'
 THEME_FILE = 'theme.json'
+STATS_FILE = 'stats.json'
 audio_cache = {}  # Cache pour les URLs audio préchargées
 
 def get_audio_url(video_id):
@@ -71,7 +73,18 @@ def save_playlists(playlists):
     with open(PLAYLIST_FILE, 'w') as f:
         json.dump(playlists, f)
 
+def load_stats():
+    if os.path.exists(STATS_FILE):
+        with open(STATS_FILE, 'r') as f:
+            return json.load(f)
+    return {'totalSongsPlayed': 0, 'totalHoursPlayed': 0}
+
+def save_stats(stats):
+    with open(STATS_FILE, 'w') as f:
+        json.dump(stats, f)
+
 playlists = load_playlists()
+stats = load_stats()
 
 @app.route('/')
 def index():
@@ -269,6 +282,53 @@ def delete_playlist(name):
         save_playlists(playlists)
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Playlist not found'})
+
+@app.route('/download-playlist/<name>', methods=['GET'])
+def download_playlist(name):
+    if name not in playlists:
+        return jsonify({'success': False, 'error': 'Playlist not found'})
+    
+    try:
+        # Créer un dossier temporaire pour la playlist
+        temp_dir = f"temp_{name}"
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Télécharger chaque morceau de la playlist
+        for song in playlists[name]:
+            video_id = song['id']
+            with YoutubeDL({'format': 'bestaudio', 'outtmpl': f"{temp_dir}/{song['title']}.%(ext)s"}) as ydl:
+                ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+        
+        # Créer un fichier ZIP de la playlist
+        zip_path = f"{name}.zip"
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    zipf.write(os.path.join(root, file), file)
+        
+        # Supprimer le dossier temporaire
+        for root, dirs, files in os.walk(temp_dir, topdown=False):
+            for name in files:
+                os.remove(os.path.join(root, name))
+            for name in dirs:
+                os.rmdir(os.path.join(root, name))
+        os.rmdir(temp_dir)
+        
+        # Envoyer le fichier ZIP à l'utilisateur
+        return send_file(zip_path, as_attachment=True)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/get-stats', methods=['GET'])
+def get_stats():
+    return jsonify({'success': True, 'stats': stats})
+
+@app.route('/save-stats', methods=['POST'])
+def save_stats_route():
+    global stats
+    stats = request.json
+    save_stats(stats)
+    return jsonify({'success': True})
 
 if __name__ == '__main__':
     app.run(debug=True, threaded=True, host='127.0.0.1', port=5000)

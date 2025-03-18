@@ -558,11 +558,83 @@
             border-radius: 4px;
             cursor: pointer;
         }
+
+        .home-section {
+            margin-bottom: 20px;
+        }
+
+        .home-section h2 {
+            margin-bottom: 10px;
+            color: var(--primary-color, #fca606);
+        }
+
+        .stats-container {
+            background-color: var(--song-card-color, #181818);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .stats-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .stats-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .stats-label {
+            color: var(--text-color, white);
+        }
+
+        .stats-value {
+            color: var(--primary-color, #fca606);
+        }
+
+        .download-btn {
+            background-color: var(--primary-color, #fca606);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .download-btn:hover {
+            background-color: var(--primary-color, #fca606);
+            transform: scale(1.02);
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="sidebar">
+            <div class="home-section">
+                <h2>Accueil</h2>
+                <div class="stats-container">
+                    <div class="stats-item">
+                        <span class="stats-label">Titres écoutés</span>
+                        <span class="stats-value" id="total-songs-played">0</span>
+                    </div>
+                    <div class="stats-item">
+                        <span class="stats-label">Heures écoutées</span>
+                        <span class="stats-value" id="total-hours-played">0</span>
+                    </div>
+                </div>
+                <button class="download-btn" onclick="downloadMusic()">
+                    <i class="fas fa-download"></i> Télécharger mes musiques
+                </button>
+            </div>
             <h2>Mes Playlists</h2>
             <div id="playlists"></div>
             <button class="playlist-btn" onclick="createPlaylist()">
@@ -678,6 +750,7 @@
         audioPlayer.addEventListener('play', function() {
             retryCount = 0;
             updatePlayButton();
+            updateStats();
         });
 
         audioPlayer.addEventListener('ended', () => {
@@ -1178,6 +1251,45 @@
             notification.textContent = message;
             document.body.appendChild(notification);
             setTimeout(() => notification.remove(), 3000);
+        }
+
+        // Statistiques d'écoute
+        let totalSongsPlayed = 0;
+        let totalHoursPlayed = 0;
+
+        function updateStats() {
+            totalSongsPlayed++;
+            totalHoursPlayed += audioPlayer.duration / 3600;
+            document.getElementById('total-songs-played').textContent = totalSongsPlayed;
+            document.getElementById('total-hours-played').textContent = totalHoursPlayed.toFixed(2);
+        }
+
+        // Téléchargement de musique
+        async function downloadMusic() {
+            const playlistName = prompt('Entrez le nom de la playlist à télécharger:');
+            if (!playlistName) return;
+
+            try {
+                const response = await fetch(`/download-playlist/${playlistName}`);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${playlistName}.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    showNotification('Téléchargement terminé');
+                } else {
+                    const data = await response.json();
+                    showNotification(data.error || 'Échec du téléchargement', 'error');
+                }
+            } catch (error) {
+                console.error('Download failed:', error);
+                showNotification('Échec du téléchargement', 'error');
+            }
         }
 
         // Initial load
