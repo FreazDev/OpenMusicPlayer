@@ -7,6 +7,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import logging
 import zipfile
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = '1234567890'  # Add a secret key for session management
@@ -31,7 +32,9 @@ ydl_opts = {
     'skip_download': True,
     'nocheckcertificate': True,
     'ignoreerrors': True,
-    'no_call_home': True
+    'no_call_home': True,
+    'socket_timeout': 10,  # Timeout amélioré
+    'retries': 3  # Nombre de tentatives en cas d'échec
 }
 
 PLAYLIST_FILE = 'playlists.json'
@@ -43,12 +46,14 @@ def get_audio_url(video_id):
     try:
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            if not info:
+                raise Exception("Could not extract video info")
             return {
-                'url': info['url'],
-                'title': info['title']
+                'url': info.get('url'),
+                'title': info.get('title', 'Unknown Title')
             }
     except Exception as e:
-        print(f"Error getting audio URL: {str(e)}")
+        logging.error(f"Error getting audio URL for {video_id}: {str(e)}")
         return None
 
 def preload_next_song(playlist_name, current_index):
@@ -74,14 +79,41 @@ def save_playlists(playlists):
         json.dump(playlists, f)
 
 def load_stats():
-    if os.path.exists(STATS_FILE):
-        with open(STATS_FILE, 'r') as f:
-            return json.load(f)
-    return {'totalSongsPlayed': 0, 'totalHoursPlayed': 0}
+    default_stats = {
+        'totalSongsPlayed': 0,
+        'totalHoursPlayed': 0.0,
+        'lastUpdated': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    try:
+        if os.path.exists(STATS_FILE):
+            with open(STATS_FILE, 'r', encoding='utf-8') as f:
+                loaded_stats = json.load(f)
+                return {**default_stats, **loaded_stats}
+        else:
+            with open(STATS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(default_stats, f, indent=2)
+            return default_stats
+    except Exception as e:
+        logging.error(f"Error loading stats: {str(e)}")
+        return default_stats
 
-def save_stats(stats):
-    with open(STATS_FILE, 'w') as f:
-        json.dump(stats, f)
+def save_stats(new_stats):
+    try:
+        if not isinstance(new_stats, dict):
+            raise ValueError("Invalid stats format")
+        
+        new_stats['lastUpdated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        if 'totalHoursPlayed' in new_stats:
+            new_stats['totalHoursPlayed'] = round(float(new_stats['totalHoursPlayed']), 2)
+        
+        with open(STATS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(new_stats, f, indent=2)
+        return True
+    except Exception as e:
+        logging.error(f"Error saving stats: {str(e)}")
+        return False
 
 playlists = load_playlists()
 stats = load_stats()
@@ -110,24 +142,9 @@ def search():
 
 @app.route('/play/<video_id>')
 def play(video_id):
-    playlist_name = request.args.get('playlist')
-    current_index = int(request.args.get('index', -1))
-    
-    if video_id in audio_cache:
-        info = audio_cache.pop(video_id)
-        if playlist_name and current_index >= 0:
-            executor.submit(preload_next_song, playlist_name, current_index)
-        return jsonify({
-            'success': True,
-            'audio_url': info['url'],
-            'title': info['title']
-        })
-    
     try:
         info = get_audio_url(video_id)
-        if info:
-            if playlist_name and current_index >= 0:
-                executor.submit(preload_next_song, playlist_name, current_index)
+        if info and info.get('url'):
             return jsonify({
                 'success': True,
                 'audio_url': info['url'],
@@ -135,16 +152,19 @@ def play(video_id):
             })
         return jsonify({'success': False, 'error': 'Could not get audio URL'})
     except Exception as e:
-        print(f"Play error: {str(e)}")
+        logging.error(f"Play error: {str(e)}")
         return jsonify({'success': False, 'error': 'Stream failed'})
 
 @app.route('/save-theme', methods=['POST'])
 def save_theme():
-    theme = request.json.get('theme')
-    if theme:
+    theme_data = request.json
+    if theme_data:
         try:
-            with open(THEME_FILE, 'w') as f:
-                json.dump(theme, f)
+            with open(THEME_FILE, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'theme': theme_data.get('theme', 'default'),
+                    'primaryColor': theme_data.get('primaryColor', '#fca606')
+                }, f, indent=2)
             return jsonify({'success': True})
         except Exception as e:
             return jsonify({'success': False, 'error': str(e)})
@@ -153,17 +173,16 @@ def save_theme():
 @app.route('/get-theme', methods=['GET'])
 def get_theme():
     try:
-        with open(THEME_FILE, 'r') as f:
-            theme = json.load(f)
-        return jsonify({'success': True, 'theme': theme})
+        with open(THEME_FILE, 'r', encoding='utf-8') as f:
+            theme_data = json.load(f)
+        return jsonify({'success': True, 'theme': theme_data})
     except:
         default_theme = {
-            'primary': '#fca606',
-            'background': '#121212',
-            'text': '#ffffff'
+            'theme': 'default',
+            'primaryColor': '#fca606'
         }
-        with open(THEME_FILE, 'w') as f:
-            json.dump(default_theme, f)
+        with open(THEME_FILE, 'w', encoding='utf-8') as f:
+            json.dump(default_theme, f, indent=2)
         return jsonify({'success': True, 'theme': default_theme})
 
 @app.route('/import-spotify', methods=['POST'])
@@ -248,14 +267,22 @@ def get_playlists():
 
 @app.route('/playlist/<name>/add', methods=['POST'])
 def add_to_playlist(name):
-    if name in playlists:
+    if not name or name not in playlists:
+        return jsonify({'success': False, 'error': 'Invalid playlist name'})
+    
+    try:
         song = request.json
+        if not song or 'id' not in song or 'title' not in song:
+            return jsonify({'success': False, 'error': 'Invalid song data'})
+            
         if not any(s['id'] == song['id'] for s in playlists[name]):
             playlists[name].append(song)
             save_playlists(playlists)
             return jsonify({'success': True})
         return jsonify({'success': False, 'error': 'Song already in playlist'})
-    return jsonify({'success': False, 'error': 'Playlist not found'})
+    except Exception as e:
+        logging.error(f"Error adding to playlist: {str(e)}")
+        return jsonify({'success': False, 'error': 'Failed to add song'})
 
 @app.route('/playlist/<name>', methods=['GET'])
 def get_playlist(name):
@@ -283,52 +310,40 @@ def delete_playlist(name):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Playlist not found'})
 
-@app.route('/download-playlist/<name>', methods=['GET'])
-def download_playlist(name):
-    if name not in playlists:
-        return jsonify({'success': False, 'error': 'Playlist not found'})
-    
-    try:
-        # Créer un dossier temporaire pour la playlist
-        temp_dir = f"temp_{name}"
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # Télécharger chaque morceau de la playlist
-        for song in playlists[name]:
-            video_id = song['id']
-            with YoutubeDL({'format': 'bestaudio', 'outtmpl': f"{temp_dir}/{song['title']}.%(ext)s"}) as ydl:
-                ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
-        
-        # Créer un fichier ZIP de la playlist
-        zip_path = f"{name}.zip"
-        with zipfile.ZipFile(zip_path, 'w') as zipf:
-            for root, dirs, files in os.walk(temp_dir):
-                for file in files:
-                    zipf.write(os.path.join(root, file), file)
-        
-        # Supprimer le dossier temporaire
-        for root, dirs, files in os.walk(temp_dir, topdown=False):
-            for name in files:
-                os.remove(os.path.join(root, name))
-            for name in dirs:
-                os.rmdir(os.path.join(root, name))
-        os.rmdir(temp_dir)
-        
-        # Envoyer le fichier ZIP à l'utilisateur
-        return send_file(zip_path, as_attachment=True)
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
-
 @app.route('/get-stats', methods=['GET'])
 def get_stats():
-    return jsonify({'success': True, 'stats': stats})
+    try:
+        current_stats = load_stats()
+        return jsonify({'success': True, 'stats': current_stats})
+    except Exception as e:
+        logging.error(f"Error in get_stats: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/save-stats', methods=['POST'])
 def save_stats_route():
-    global stats
-    stats = request.json
-    save_stats(stats)
-    return jsonify({'success': True})
+    try:
+        new_stats = request.json
+        if not new_stats:
+            raise ValueError("No stats data provided")
+        
+        current_stats = load_stats()
+        current_stats.update({
+            'totalSongsPlayed': new_stats.get('totalSongsPlayed', current_stats['totalSongsPlayed']),
+            'totalHoursPlayed': new_stats.get('totalHoursPlayed', current_stats['totalHoursPlayed'])
+        })
+        
+        if save_stats(current_stats):
+            return jsonify({'success': True})
+        return jsonify({'success': False, 'error': 'Failed to save stats'})
+    except Exception as e:
+        logging.error(f"Error in save_stats_route: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)})
+
+# Gestionnaire d'erreurs global
+@app.errorhandler(Exception)
+def handle_error(error):
+    logging.error(f"Unhandled error: {str(error)}")
+    return jsonify({'success': False, 'error': 'An unexpected error occurred'})
 
 if __name__ == '__main__':
     app.run(debug=True, threaded=True, host='127.0.0.1', port=5000)

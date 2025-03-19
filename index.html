@@ -12,7 +12,7 @@
             box-sizing: border-box;
         }
 
-        .spotify-import-btn {
+        .spotify-import-btn, .download-btn, .playlist-btn, .theme-btn {
             background-color: var(--primary-color, #fca606);
             color: white;
             border: none;
@@ -29,7 +29,7 @@
             transition: all 0.3s ease;
         }
 
-        .spotify-import-btn:hover {
+        .spotify-import-btn:hover, .download-btn:hover, .playlist-btn:hover, .theme-btn:hover {
             background-color: var(--primary-color, #fca606);
             transform: scale(1.02);
         }
@@ -325,6 +325,15 @@
             color: #e74c3c;
         }
 
+        .song-card .remove-song {
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .song-card:hover .remove-song {
+            opacity: 1;
+        }
+
         .playlist-item {
             background-color: var(--playlist-item-color, #282828);
             padding: 12px 15px;
@@ -427,50 +436,6 @@
             font-size: 24px;
             margin-bottom: 10px;
             color: #1db954;
-        }
-
-        .playlist-btn {
-            background-color: var(--primary-color, #fca606);
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 20px;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 15px;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            transition: all 0.3s ease;
-        }
-
-        .playlist-btn:hover {
-            background-color: var(--primary-color, #fca606);
-            transform: scale(1.02);
-        }
-
-        .theme-btn {
-            background-color: var(--primary-color, #fca606);
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 20px;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 10px;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            transition: all 0.3s ease;
-        }
-
-        .theme-btn:hover {
-            background-color: var(--primary-color, #fca606);
-            transform: scale(1.02);
         }
 
         .theme-modal {
@@ -592,35 +557,13 @@
         .stats-value {
             color: var(--primary-color, #fca606);
         }
-
-        .download-btn {
-            background-color: var(--primary-color, #fca606);
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 20px;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 10px;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            transition: all 0.3s ease;
-        }
-
-        .download-btn:hover {
-            background-color: var(--primary-color, #fca606);
-            transform: scale(1.02);
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="sidebar">
             <div class="home-section">
-                <h2>Accueil</h2>
+                <h2>Statistiques</h2>
                 <div class="stats-container">
                     <div class="stats-item">
                         <span class="stats-label">Titres écoutés</span>
@@ -628,12 +571,9 @@
                     </div>
                     <div class="stats-item">
                         <span class="stats-label">Heures écoutées</span>
-                        <span class="stats-value" id="total-hours-played">0</span>
+                        <span class="stats-value" id="total-hours-played">0.00</span>
                     </div>
                 </div>
-                <button class="download-btn" onclick="downloadMusic()">
-                    <i class="fas fa-download"></i> Télécharger mes musiques
-                </button>
             </div>
             <h2>Mes Playlists</h2>
             <div id="playlists"></div>
@@ -709,12 +649,16 @@
         <div class="context-menu-item delete" onclick="deleteCurrentPlaylist()">
             <i class="fas fa-trash"></i> Supprimer la playlist
         </div>
+        <div class="context-menu-item delete" onclick="removeCurrentSong()">
+            <i class="fas fa-times"></i> Supprimer de la playlist
+        </div>
     </div>
 
     <script>
         let currentPlaylist = [];
         let currentTrackIndex = 0;
         let currentContextPlaylist = '';
+        let currentContextSong = null;
         let retryCount = 0;
         const maxRetries = 3;
         const audioPlayer = document.getElementById('audio-player');
@@ -737,10 +681,8 @@
             console.error('Audio error:', e);
             if (retryCount < maxRetries) {
                 retryCount++;
-                console.log(`Retrying playback (attempt ${retryCount})`);
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                audioPlayer.load();
-                audioPlayer.play().catch(console.error);
+                await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                await playSong(currentPlaylist[currentTrackIndex].id, currentPlaylist[currentTrackIndex].title);
             } else {
                 showNotification('Erreur de lecture audio', 'error');
                 retryCount = 0;
@@ -812,7 +754,7 @@
                 e.preventDefault();
                 const playlistName = playlistItem.querySelector('.playlist-name').textContent.split(' (')[0];
                 currentContextPlaylist = playlistName;
-                showContextMenu(e.pageX, e.pageY);
+                showContextMenu(e.pageX, e.pageY, 'playlist', playlistName);
             }
         });
 
@@ -820,8 +762,11 @@
         document.addEventListener('click', function(e) {
             if (!e.target.closest('.modal-content') && !e.target.closest('.add-to-playlist-btn')) {
                 document.getElementById('add-to-playlist-modal').style.display = 'none';
+                document.getElementById('download-modal').style.display = 'none';
             }
-            document.getElementById('context-menu').style.display = 'none';
+            if (!e.target.closest('.context-menu')) {
+                document.getElementById('context-menu').style.display = 'none';
+            }
         });
 
         // Fonctions principales
@@ -887,6 +832,14 @@
                         ` : ''}
                     </div>
                 `;
+                
+                if (playlistName) {
+                    card.addEventListener('contextmenu', function(e) {
+                        e.preventDefault();
+                        showContextMenu(e.pageX, e.pageY, 'song', { id: song.id, title: song.title, playlist: playlistName });
+                    });
+                }
+                
                 container.appendChild(card);
             });
         }
@@ -895,6 +848,9 @@
             retryCount = 0;
             try {
                 const response = await fetch(`/play/${videoId}`);
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
                 const data = await response.json();
                 
                 if (data.success) {
@@ -907,13 +863,14 @@
                         console.error('Playback failed:', error);
                         if (retryCount < maxRetries) {
                             retryCount++;
-                            setTimeout(() => playSong(videoId, title), 1000);
+                            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                            await playSong(videoId, title);
                         } else {
                             showNotification('Échec de la lecture', 'error');
                         }
                     }
                 } else {
-                    showNotification(data.error || 'Échec de la lecture', 'error');
+                    throw new Error(data.error || 'Échec de la lecture');
                 }
             } catch (error) {
                 console.error('Failed to play song:', error);
@@ -954,11 +911,25 @@
             `;
         }
 
-        function showContextMenu(x, y) {
+        function showContextMenu(x, y, type, data) {
             const menu = document.getElementById('context-menu');
             menu.style.display = 'block';
             menu.style.left = `${x}px`;
             menu.style.top = `${y}px`;
+
+            const playlistOption = menu.querySelector('.context-menu-item:first-child');
+            const songOption = menu.querySelector('.context-menu-item:last-child');
+
+            if (type === 'playlist') {
+                currentContextPlaylist = data;
+                currentContextSong = null;
+                playlistOption.style.display = 'flex';
+                songOption.style.display = 'none';
+            } else if (type === 'song') {
+                currentContextSong = data;
+                playlistOption.style.display = 'none';
+                songOption.style.display = 'flex';
+            }
         }
 
         function showPlaylistModal(songId, songTitle) {
@@ -1036,9 +1007,11 @@
                     });
                     const data = await response.json();
                     if (data.success) {
+                        document.getElementById('context-menu').style.display = 'none';
                         loadPlaylists();
                         showNotification('Playlist supprimée');
                         document.getElementById('songs-container').innerHTML = '';
+                        currentContextPlaylist = '';
                     } else {
                         showNotification(data.error || 'Échec de la suppression', 'error');
                     }
@@ -1046,6 +1019,29 @@
                     console.error('Failed to delete playlist:', error);
                     showNotification('Échec de la suppression', 'error');
                 }
+            }
+        }
+
+        async function removeCurrentSong() {
+            if (!currentContextSong) return;
+            
+            try {
+                const response = await fetch(`/playlist/${currentContextSong.playlist}/remove/${currentContextSong.id}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('context-menu').style.display = 'none';
+                    showPlaylist(currentContextSong.playlist);
+                    loadPlaylists();
+                    showNotification('Titre supprimé de la playlist');
+                    currentContextSong = null;
+                } else {
+                    showNotification(data.error || 'Échec de la suppression', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to remove song:', error);
+                showNotification('Échec de la suppression', 'error');
             }
         }
 
@@ -1077,11 +1073,14 @@
         async function loadPlaylists() {
             try {
                 const response = await fetch('/playlists');
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
                 const data = await response.json();
                 if (data.success) {
                     displayPlaylists(data.playlists);
                 } else {
-                    showNotification('Échec du chargement des playlists', 'error');
+                    throw new Error(data.error || 'Échec du chargement des playlists');
                 }
             } catch (error) {
                 console.error('Failed to load playlists:', error);
@@ -1174,17 +1173,22 @@
         }
 
         async function changeTheme(theme) {
+            const primaryColor = document.getElementById('primary-color-picker').value;
             try {
                 const response = await fetch('/save-theme', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ theme }),
+                    body: JSON.stringify({ 
+                        theme: theme,
+                        primaryColor: primaryColor
+                    }),
                 });
                 const data = await response.json();
                 if (data.success) {
                     applyTheme(theme);
+                    document.documentElement.style.setProperty('--primary-color', primaryColor);
                     showNotification('Thème appliqué');
                     closeThemeModal();
                 } else {
@@ -1196,7 +1200,33 @@
             }
         }
 
-        function applyTheme(theme) {
+        async function changePrimaryColor(color) {
+            try {
+                const response = await fetch('/save-theme', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        theme: document.body.dataset.currentTheme || 'default',
+                        primaryColor: color
+                    }),
+                });
+                const data = await response.json();
+                if (data.success) {
+                    document.documentElement.style.setProperty('--primary-color', color);
+                    showNotification('Couleur principale mise à jour');
+                } else {
+                    showNotification('Échec de la mise à jour de la couleur', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to update primary color:', error);
+                showNotification('Échec de la mise à jour de la couleur', 'error');
+            }
+        }
+
+        async function applyTheme(theme) {
+            document.body.dataset.currentTheme = theme;
             const body = document.body;
             const player = document.querySelector('.player');
             const sidebar = document.querySelector('.sidebar');
@@ -1240,9 +1270,20 @@
             }
         }
 
-        function changePrimaryColor(color) {
-            document.documentElement.style.setProperty('--primary-color', color);
-            showNotification('Couleur principale mise à jour');
+        async function loadTheme() {
+            try {
+                const response = await fetch('/get-theme');
+                const data = await response.json();
+                if (data.success) {
+                    const themeData = data.theme;
+                    document.body.dataset.currentTheme = themeData.theme;
+                    applyTheme(themeData.theme);
+                    document.documentElement.style.setProperty('--primary-color', themeData.primaryColor);
+                    document.getElementById('primary-color-picker').value = themeData.primaryColor;
+                }
+            } catch (error) {
+                console.error('Failed to load theme:', error);
+            }
         }
 
         function showNotification(message, type = 'success') {
@@ -1254,46 +1295,74 @@
         }
 
         // Statistiques d'écoute
-        let totalSongsPlayed = 0;
-        let totalHoursPlayed = 0;
+        let stats = {
+            totalSongsPlayed: 0,
+            totalHoursPlayed: 0.0
+        };
 
-        function updateStats() {
-            totalSongsPlayed++;
-            totalHoursPlayed += audioPlayer.duration / 3600;
-            document.getElementById('total-songs-played').textContent = totalSongsPlayed;
-            document.getElementById('total-hours-played').textContent = totalHoursPlayed.toFixed(2);
-        }
-
-        // Téléchargement de musique
-        async function downloadMusic() {
-            const playlistName = prompt('Entrez le nom de la playlist à télécharger:');
-            if (!playlistName) return;
-
+        async function loadStats() {
             try {
-                const response = await fetch(`/download-playlist/${playlistName}`);
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `${playlistName}.zip`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(url);
-                    showNotification('Téléchargement terminé');
-                } else {
-                    const data = await response.json();
-                    showNotification(data.error || 'Échec du téléchargement', 'error');
+                const response = await fetch('/get-stats');
+                const data = await response.json();
+                if (data.success) {
+                    stats = data.stats;
+                    updateStatsDisplay();
                 }
             } catch (error) {
-                console.error('Download failed:', error);
-                showNotification('Échec du téléchargement', 'error');
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        function updateStatsDisplay() {
+            document.getElementById('total-songs-played').textContent = stats.totalSongsPlayed;
+            document.getElementById('total-hours-played').textContent = stats.totalHoursPlayed.toFixed(2);
+        }
+
+        function updateStats() {
+            stats.totalSongsPlayed++;
+            if (audioPlayer.duration) {
+                stats.totalHoursPlayed += audioPlayer.duration / 3600;
+            }
+            updateStatsDisplay();
+            saveStats();
+        }
+
+        async function saveStats() {
+            try {
+                const response = await fetch('/save-stats', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(stats)
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+            } catch (error) {
+                console.error('Failed to save stats:', error);
+            }
+        }
+
+        // Charger les stats au démarrage
+        async function loadStats() {
+            try {
+                const response = await fetch('/get-stats');
+                const data = await response.json();
+                if (data.success) {
+                    stats = data.stats;
+                    updateStatsDisplay();
+                }
+            } catch (error) {
+                console.error('Failed to load stats:', error);
             }
         }
 
         // Initial load
         loadPlaylists();
+        loadStats();
+        loadTheme(); // Ajoutez cette ligne
     </script>
 </body>
 </html>
