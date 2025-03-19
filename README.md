@@ -1,7 +1,8 @@
-🎶 OpenMusicPlayer 🎧
+# 🎶 OpenMusicPlayer 🎧  
 
-**OpenMusicPlayer** est une application gratuite et open-source pour gérer des playlists musicales en utilisant **YouTube** et **Spotify**. Elle vous permet de rechercher des chansons sur YouTube, d'importer des playlists depuis Spotify, de créer vos propres playlists, et d'écouter vos chansons en streaming directement depuis l'application ! 🎵
+**OpenMusicPlayer** est une application gratuite et open-source pour gérer des playlists musicales en utilisant **YouTube** et **Spotify**. Elle vous permet de rechercher des chansons sur YouTube, d'importer des playlists depuis Spotify, de créer vos propres playlists et d'écouter vos chansons en streaming directement depuis l'application ! 🎵  
 
+![OpenMusicPlayer](https://i.ibb.co/tMsMkYtY/image.png)  
 
 ## 🚀 Fonctionnalités  
 - 🔍 **Recherche Intelligente** : trouvez et écoutez vos morceaux préférés.  
@@ -12,35 +13,32 @@
 - 🎨 **Personnalisation** : choisissez un thème (**clair/sombre**) et une couleur principale.  
 - 📊 **Statistiques d'écoute** : suivez automatiquement votre activité musicale.  
 
-![OpenMusicPlayer](https://i.ibb.co/tMsMkYtY/image.png)
+---
+
+## 📑 Configuration de l'intégration avec **Spotify** 🎵  
+
+### 🎯 Étape 1 : Créez un compte **Spotify Developer**  
+
+1. **Créez un compte Spotify Developer** :  
+   - Allez sur le [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) et connectez-vous avec votre compte **Spotify**. *(Pas besoin d'un compte Premium !)*  
+
+   > 🌟 *Si vous n'avez pas encore de compte Spotify, créez-en un gratuitement !* Vous aurez besoin de ce compte pour récupérer le nom des morceaux dans les playlists, ce qui permet d'intégrer correctement vos playlists Spotify dans **OpenMusicPlayer**.  
+
+2. **Créez une application** :  
+   - Cliquez sur **"Create an App"**, donnez un joli nom à votre application (par exemple, *OpenMusicPlayer*), puis sauvegardez les paramètres.  
+   - Une fois l'application créée, vous pourrez accéder à vos identifiants **Client ID** et **Client Secret**.  
+
+3. **Obtenez vos identifiants** :  
+   - Après avoir créé l'application, vous trouverez votre **Client ID** et **Client Secret** dans les paramètres de l'application. 🆔  
+
+![Playlist](https://i.ibb.co/tMsMkYtY/image.png)  
 
 ---
 
-## 📑 Configuration de l'intégration avec **Spotify** 🎵
+### ⚙️ Étape 2 : Configurez l'application  
 
-### 🎯 Étape 1 : Créez un compte **Spotify Developer**
-
-1. **Créez un compte Spotify Developer** :
-   - Allez sur le Spotify Developer Dashboard (https://developer.spotify.com/dashboard) et connectez-vous avec votre compte **Spotify**. **(Pas besoin d'un compte Premium !)**
-   
-   > 🌟 *Si vous n'avez pas encore de compte Spotify, créez-en un gratuitement !* Vous aurez besoin de ce compte pour récupérer le nom des morceaux dans les playlists, ce qui permet d'intégrer correctement vos playlists Spotify dans **OpenMusicPlayer**.
-
-   
-2. **Créez une application** :
-   - Cliquez sur **"Create an App"**, donnez un joli nom à votre application (par exemple, "OpenMusicPlayer"), puis sauvegardez les paramètres.
-   - Une fois l'application créée, vous pourrez accéder à vos identifiants **Client ID** et **Client Secret**.
-
-3. **Obtenez vos identifiants** :
-   - Après avoir créé l'application, vous trouverez votre **Client ID** et **Client Secret** dans les paramètres de l'application. 🆔
-
-   ![OpenMusicPlayer-Playlist]([https://i.ibb.co/tMsMkYtY/image.png)
-
----
-
-### ⚙️ Étape 2 : Configurez l'application
-
-1. **Mettez à jour votre code** :
-   Remplacez les valeurs `SPOTIFY_CLIENT_ID` et `SPOTIFY_CLIENT_SECRET` par vos propres identifiants dans le fichier `app.py`.
+1. **Mettez à jour votre code** :  
+   Remplacez les valeurs `SPOTIFY_CLIENT_ID` et `SPOTIFY_CLIENT_SECRET` par vos propres identifiants dans le fichier `app.py`.  
 
    ```python
    # Configuration Spotify
