@@ -119,53 +119,15 @@
             background-color: var(--song-card-color, #181818);
             padding: 15px;
             border-radius: 8px;
-            transition: all 0.2s ease;
             position: relative;
             display: flex;
             align-items: center;
             justify-content: space-between;
             margin-bottom: 8px;
-            transform-origin: left center;
         }
 
         .song-card:hover {
             background-color: var(--song-card-hover-color, #282828);
-            transform: translateX(2px) scale(1.01);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-
-        .song-card.playing {
-            background-color: var(--song-card-playing-color, #000000);
-            border: 2px solid var(--primary-color, #fca606);
-            position: relative;
-            padding-left: 20px;
-            padding-right: 20px;
-            box-shadow: 0 0 15px rgba(var(--primary-color-rgb, 252, 166, 6), 0.5);
-            animation: borderPulse 2s infinite;
-            transition: all 0.3s ease;
-            border-radius: 12px;
-            transform: scale(1.02);
-            z-index: 1;
-        }
-
-        @keyframes borderPulse {
-            0% { box-shadow: 0 0 15px rgba(var(--primary-color-rgb, 252, 166, 6), 0.3); }
-            50% { box-shadow: 0 0 20px rgba(var(--primary-color-rgb, 252, 166, 6), 0.6); }
-            100% { box-shadow: 0 0 15px rgba(var(--primary-color-rgb, 252, 166, 6), 0.3); }
-        }
-
-        .song-card.playing::before {
-            content: '▶';
-            position: absolute;
-            left: 8px;
-            color: var(--primary-color, #fca606);
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 0.8; }
-            50% { opacity: 1; }
-            100% { opacity: 0.8; }
         }
 
         .song-title {
@@ -700,6 +662,9 @@
     </div>
 
     <div id="context-menu" class="context-menu">
+        <div class="context-menu-item rename" onclick="renameCurrentPlaylist()">
+            <i class="fas fa-edit"></i> Renommer la playlist
+        </div>
         <div class="context-menu-item delete" onclick="deleteCurrentPlaylist()">
             <i class="fas fa-trash"></i> Supprimer la playlist
         </div>
@@ -933,19 +898,13 @@
             }
 
             songs.forEach((song, index) => {
-                // Vérifier si la chanson est en cours de lecture en comparant les IDs
-                const isPlaying = currentPlaylist.some(s => s.id === song.id) && 
-                                 audioPlayer.currentSrc && 
-                                 !audioPlayer.paused &&
-                                 currentPlaylist[currentTrackIndex].id === song.id;
-
                 const card = document.createElement('div');
-                card.className = `song-card ${isPlaying ? 'playing' : ''}`;
+                card.className = 'song-card';
                 card.innerHTML = `
                     <div class="song-title">${song.title}</div>
                     <div class="song-controls">
                         <button class="play-btn" onclick="playSong('${song.id}', '${song.title.replace(/'/g, "\\'")}')">
-                            <i class="fas fa-${isPlaying ? 'pause' : 'play'}"></i> ${isPlaying ? 'Pause' : 'Play'}
+                            <i class="fas fa-play"></i> Play
                         </button>
                         ${!playlistName ? `
                             <button class="add-to-playlist-btn" onclick="showPlaylistModal('${song.id}', '${song.title.replace(/'/g, "\\'")}')">
@@ -954,21 +913,43 @@
                         ` : ''}
                     </div>
                 `;
-                
-                if (playlistName) {
-                    card.addEventListener('contextmenu', function(e) {
-                        e.preventDefault();
-                        showContextMenu(e.pageX, e.pageY, 'song', { id: song.id, title: song.title, playlist: playlistName });
-                    });
-                }
-                
                 container.appendChild(card);
             });
+        }
 
-            // Faire défiler jusqu'à la chanson en cours si elle est présente
-            const playingCard = container.querySelector('.song-card.playing');
-            if (playingCard) {
-                playingCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        async function renameCurrentPlaylist() {
+            if (!currentContextPlaylist) return;
+            
+            const newName = prompt('Nouveau nom de la playlist:', currentContextPlaylist);
+            if (!newName || newName === currentContextPlaylist) {
+                document.getElementById('context-menu').style.display = 'none';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/playlist/${currentContextPlaylist}/rename`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ newName })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    // Mise à jour des références si la playlist en cours est renommée
+                    if (currentPlaylist && currentPlaylist.length > 0 && currentContextPlaylist === document.querySelector('.playlist-header h2')?.textContent) {
+                        // Recharger la playlist avec le nouveau nom
+                        await showPlaylist(newName);
+                    }
+                    document.getElementById('context-menu').style.display = 'none';
+                    loadPlaylists();
+                    showNotification('Playlist renommée');
+                } else {
+                    showNotification(data.error || 'Échec du renommage', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to rename playlist:', error);
+                showNotification('Échec du renommage', 'error');
             }
         }
 

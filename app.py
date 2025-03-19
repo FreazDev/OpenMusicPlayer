@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session, send_file
+from flask import Flask, render_template, request, jsonify, session, send_file, send_from_directory
 from yt_dlp import YoutubeDL
 import os
 import json
@@ -76,25 +76,19 @@ def get_audio_url(video_id):
                 return cached['data']
         
         with YoutubeDL(ydl_opts) as ydl:
-            for attempt in range(3):  # 3 tentatives maximum
-                try:
-                    info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-                    if info:
-                        data = {
-                            'url': info.get('url'),
-                            'title': info.get('title', 'Unknown Title')
-                        }
-                        audio_cache[video_id] = {
-                            'data': data,
-                            'timestamp': time.time()
-                        }
-                        return data
-                except Exception as e:
-                    if attempt == 2:  # Dernière tentative
-                        raise e
-                    time.sleep(1)  # Attendre avant de réessayer
-        
-        raise Exception("Could not extract video info")
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            if not info:
+                raise Exception("Could not extract video info")
+                
+            data = {
+                'url': info.get('url'),
+                'title': info.get('title', 'Unknown Title')
+            }
+            audio_cache[video_id] = {
+                'data': data,
+                'timestamp': time.time()
+            }
+            return data
     except Exception as e:
         logging.error(f"Error getting audio URL for {video_id}: {str(e)}")
         return None
@@ -163,7 +157,7 @@ stats = load_stats()
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'index.html')
 
 @app.route('/search', methods=['POST'])
 def search():
@@ -466,6 +460,39 @@ def delete_playlist(name):
         save_playlists(playlists)
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Playlist not found'})
+
+@app.route('/playlist/<name>/rename', methods=['PUT'])
+def rename_playlist(name):
+    try:
+        if name not in playlists:
+            return jsonify({'success': False, 'error': 'Playlist non trouvée'})
+        
+        data = request.json
+        new_name = data.get('newName')
+        
+        if not new_name:
+            return jsonify({'success': False, 'error': 'Nouveau nom invalide'})
+            
+        if new_name in playlists:
+            return jsonify({'success': False, 'error': 'Ce nom de playlist existe déjà'})
+            
+        # Sauvegarder les données de la playlist
+        playlist_data = playlists[name]
+        # Supprimer l'ancienne clé
+        del playlists[name]
+        # Créer la nouvelle clé avec les mêmes données
+        playlists[new_name] = playlist_data
+        
+        save_playlists(playlists)
+        
+        return jsonify({
+            'success': True,
+            'oldName': name,
+            'newName': new_name
+        })
+    except Exception as e:
+        logging.error(f"Error renaming playlist: {str(e)}")
+        return jsonify({'success': False, 'error': 'Erreur lors du renommage'})
 
 @app.route('/get-stats', methods=['GET'])
 def get_stats():
