@@ -136,9 +136,22 @@
 
         .song-card.playing {
             background-color: var(--song-card-playing-color, #000000);
-            border: 1px solid var(--primary-color, #fca606);
+            border: 2px solid var(--primary-color, #fca606);
             position: relative;
             padding-left: 20px;
+            padding-right: 20px;
+            box-shadow: 0 0 15px rgba(var(--primary-color-rgb, 252, 166, 6), 0.5);
+            animation: borderPulse 2s infinite;
+            transition: all 0.3s ease;
+            border-radius: 12px;
+            transform: scale(1.02);
+            z-index: 1;
+        }
+
+        @keyframes borderPulse {
+            0% { box-shadow: 0 0 15px rgba(var(--primary-color-rgb, 252, 166, 6), 0.3); }
+            50% { box-shadow: 0 0 20px rgba(var(--primary-color-rgb, 252, 166, 6), 0.6); }
+            100% { box-shadow: 0 0 15px rgba(var(--primary-color-rgb, 252, 166, 6), 0.3); }
         }
 
         .song-card.playing::before {
@@ -920,7 +933,12 @@
             }
 
             songs.forEach((song, index) => {
-                const isPlaying = currentPlaylist === songs && currentTrackIndex === index;
+                // Vérifier si la chanson est en cours de lecture en comparant les IDs
+                const isPlaying = currentPlaylist.some(s => s.id === song.id) && 
+                                 audioPlayer.currentSrc && 
+                                 !audioPlayer.paused &&
+                                 currentPlaylist[currentTrackIndex].id === song.id;
+
                 const card = document.createElement('div');
                 card.className = `song-card ${isPlaying ? 'playing' : ''}`;
                 card.innerHTML = `
@@ -946,7 +964,38 @@
                 
                 container.appendChild(card);
             });
+
+            // Faire défiler jusqu'à la chanson en cours si elle est présente
+            const playingCard = container.querySelector('.song-card.playing');
+            if (playingCard) {
+                playingCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
         }
+
+        // Mettre à jour l'affichage quand une chanson commence à jouer
+        audioPlayer.addEventListener('play', function() {
+            const allCards = document.querySelectorAll('.song-card');
+            allCards.forEach(card => {
+                const playBtn = card.querySelector('.play-btn');
+                const songId = playBtn.getAttribute('onclick').split("'")[1];
+                if (currentPlaylist[currentTrackIndex].id === songId) {
+                    card.classList.add('playing');
+                    playBtn.innerHTML = '<i class="fas fa-pause"></i> Pause';
+                } else {
+                    card.classList.remove('playing');
+                    playBtn.innerHTML = '<i class="fas fa-play"></i> Play';
+                }
+            });
+        });
+
+        // Mettre à jour l'affichage quand une chanson est mise en pause
+        audioPlayer.addEventListener('pause', function() {
+            const playingCard = document.querySelector('.song-card.playing');
+            if (playingCard) {
+                const playBtn = playingCard.querySelector('.play-btn');
+                playBtn.innerHTML = '<i class="fas fa-play"></i> Play';
+            }
+        });
 
         function updateNowPlaying(title, isLoading = false) {
             const container = document.getElementById('now-playing-container');
@@ -1045,20 +1094,53 @@
             menu.style.left = `${x}px`;
             menu.style.top = `${y}px`;
 
+            // Si le menu dépasse de la fenêtre à droite, on l'aligne à droite
+            if (x + menu.offsetWidth > window.innerWidth) {
+                menu.style.left = `${window.innerWidth - menu.offsetWidth - 5}px`;
+            }
+            // Si le menu dépasse en bas, on l'aligne en haut
+            if (y + menu.offsetHeight > window.innerHeight) {
+                menu.style.top = `${window.innerHeight - menu.offsetHeight - 5}px`;
+            }
+
             const playlistOption = menu.querySelector('.context-menu-item:first-child');
             const songOption = menu.querySelector('.context-menu-item:last-child');
 
+            // On cache les deux options par défaut
+            playlistOption.style.display = 'none';
+            songOption.style.display = 'none';
+
+            // On affiche uniquement l'option appropriée
             if (type === 'playlist') {
                 currentContextPlaylist = data;
                 currentContextSong = null;
                 playlistOption.style.display = 'flex';
-                songOption.style.display = 'none';
             } else if (type === 'song') {
                 currentContextSong = data;
-                playlistOption.style.display = 'none';
                 songOption.style.display = 'flex';
             }
         }
+
+        // Amélioration de la gestion des clics sur le menu contextuel
+        document.addEventListener('click', function(e) {
+            const contextMenu = document.getElementById('context-menu');
+            const clickedItem = e.target.closest('.context-menu-item');
+            
+            // Si on clique en dehors du menu ou sur un élément du menu
+            if (!e.target.closest('.context-menu') || clickedItem) {
+                contextMenu.style.display = 'none';
+                if (!clickedItem) {
+                    // Réinitialiser les variables de contexte si on clique en dehors
+                    currentContextPlaylist = null;
+                    currentContextSong = null;
+                }
+            }
+        });
+
+        // Empêcher la fermeture du menu sur clic droit
+        document.getElementById('context-menu').addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+        });
 
         function showPlaylistModal(songId, songTitle) {
             const modal = document.getElementById('add-to-playlist-modal');
@@ -1139,15 +1221,14 @@
                         loadPlaylists();
                         showNotification('Playlist supprimée');
                         document.getElementById('songs-container').innerHTML = '';
-                        currentContextPlaylist = '';
-                    } else {
-                        showNotification(data.error || 'Échec de la suppression', 'error');
+                        currentContextPlaylist = null;
                     }
                 } catch (error) {
                     console.error('Failed to delete playlist:', error);
                     showNotification('Échec de la suppression', 'error');
                 }
             }
+            document.getElementById('context-menu').style.display = 'none';
         }
 
         async function removeCurrentSong() {
@@ -1164,13 +1245,12 @@
                     loadPlaylists();
                     showNotification('Titre supprimé de la playlist');
                     currentContextSong = null;
-                } else {
-                    showNotification(data.error || 'Échec de la suppression', 'error');
                 }
             } catch (error) {
                 console.error('Failed to remove song:', error);
                 showNotification('Échec de la suppression', 'error');
             }
+            document.getElementById('context-menu').style.display = 'none';
         }
 
         async function createPlaylist() {
@@ -1341,11 +1421,13 @@
                     body: JSON.stringify({
                         theme: document.body.dataset.currentTheme || 'default',
                         primaryColor: color
-                    }),
+                    })
                 });
                 const data = await response.json();
                 if (data.success) {
+                    const rgb = hexToRgb(color);
                     document.documentElement.style.setProperty('--primary-color', color);
+                    document.documentElement.style.setProperty('--primary-color-rgb', `${rgb.r}, ${rgb.g}, ${rgb.b}`);
                     showNotification('Couleur principale mise à jour');
                 } else {
                     showNotification('Échec de la mise à jour de la couleur', 'error');
@@ -1354,6 +1436,17 @@
                 console.error('Failed to update primary color:', error);
                 showNotification('Échec de la mise à jour de la couleur', 'error');
             }
+        }
+
+        function hexToRgb(hex) {
+            const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+            hex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
         }
 
         async function applyTheme(theme) {
@@ -1424,17 +1517,14 @@
             document.body.appendChild(notification);
             
             if (autoRemove) {
-                setTimeout(() => notification.remove(), 3000);
+                setTimeout(() => {
+                    notification.style.opacity = '0';
+                    setTimeout(() => notification.remove(), 300);
+                }, 3000);
             }
             
             return notification;
         }
-
-        // Statistiques d'écoute
-        let stats = {
-            totalSongsPlayed: 0,
-            totalHoursPlayed: 0.0
-        };
 
         async function loadStats() {
             try {
@@ -1447,11 +1537,6 @@
             } catch (error) {
                 console.error('Failed to load stats:', error);
             }
-        }
-
-        function updateStatsDisplay() {
-            document.getElementById('total-songs-played').textContent = stats.totalSongsPlayed;
-            document.getElementById('total-hours-played').textContent = stats.totalHoursPlayed.toFixed(2);
         }
 
         function updateStats() {
@@ -1463,6 +1548,11 @@
             saveStats();
         }
 
+        function updateStatsDisplay() {
+            document.getElementById('total-songs-played').textContent = stats.totalSongsPlayed;
+            document.getElementById('total-hours-played').textContent = stats.totalHoursPlayed.toFixed(2);
+        }
+
         async function saveStats() {
             try {
                 const response = await fetch('/save-stats', {
@@ -1472,7 +1562,6 @@
                     },
                     body: JSON.stringify(stats)
                 });
-                
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
                 }
@@ -1481,24 +1570,206 @@
             }
         }
 
-        // Charger les stats au démarrage
-        async function loadStats() {
-            try {
-                const response = await fetch('/get-stats');
-                const data = await response.json();
-                if (data.success) {
-                    stats = data.stats;
-                    updateStatsDisplay();
-                }
-            } catch (error) {
-                console.error('Failed to load stats:', error);
-            }
-        }
-
         // Initial load
         loadPlaylists();
         loadStats();
         loadTheme(); // Ajoutez cette ligne
+
+        // Fonction de retry améliorée
+        async function retryOperation(operation, maxRetries = 3, delay = 1000) {
+            let lastError;
+            
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    return await operation();
+                } catch (error) {
+                    lastError = error;
+                    await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+                }
+            }
+            throw lastError;
+        }
+
+        // Amélioration de la fonction playSong
+        async function playSong(videoId, title) {
+            if (!videoId || !title) {
+                showNotification('Données de chanson invalides', 'error');
+                return;
+            }
+
+            updateNowPlaying(title, true);
+            try {
+                const result = await retryOperation(async () => {
+                    const response = await fetch(`/play/${videoId}`);
+                    if (!response.ok) throw new Error('Failed to load audio');
+                    return await response.json();
+                });
+                
+                if (result.success) {
+                    try {
+                        audioPlayer.src = result.audio_url;
+                        await audioPlayer.play();
+                        updatePlayButton();
+                        updateNowPlaying(title, false);
+                    } catch (error) {
+                        throw new Error('Playback failed');
+                    }
+                } else {
+                    throw new Error(result.error);
+                }
+            } catch (error) {
+                console.error('Play error:', error);
+                showNotification('Échec de la lecture', 'error');
+                updateNowPlaying('Erreur de lecture', false);
+            }
+        }
+
+        // File d'attente pour les requêtes
+        class RequestQueue {
+            constructor() {
+                this.queue = [];
+                this.processing = false;
+            }
+            async add(request) {
+                return new Promise((resolve, reject) => {
+                    this.queue.push({ request, resolve, reject });
+                    if (!this.processing) {
+                        this.process();
+                    }
+                });
+            }
+            async process() {
+                if (this.queue.length === 0) {
+                    this.processing = false;
+                    return;
+                }
+
+                this.processing = true;
+                const { request, resolve, reject } = this.queue.shift();
+                try {
+                    const result = await request();
+                    resolve(result);
+                } catch (error) {
+                    reject(error);
+                }
+
+                setTimeout(() => this.process(), 100);
+            }
+        }
+
+        const requestQueue = new RequestQueue();
+
+        // Amélioration de searchSongs avec la file d'attente
+        async function searchSongs() {
+            const query = searchInput.value.trim();
+            if (!query) return;
+
+            searchLoader.style.display = 'block';
+            try {
+                const data = await requestQueue.add(async () => {
+                    const response = await fetch('/search', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query })
+                    });
+                    return response.json();
+                });
+                
+                if (data.success) {
+                    displaySongs(data.songs);
+                } else {
+                    throw new Error(data.error);
+                }
+            } catch (error) {
+                console.error('Search failed:', error);
+                showNotification('Échec de la recherche', 'error');
+            } finally {
+                searchLoader.style.display = 'none';
+            }
+        }
+
+        // Gestionnaire d'erreurs amélioré    
+        class ErrorHandler {
+            static async handleResponse(response, context = '') {
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => null);
+                    throw new Error(   
+                        errorData?.error || 
+                        `Erreur ${response.status} pendant ${context}`
+                    );
+                }
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.error || `${context} operation failed`);
+                }
+                return data;
+            }
+            
+            static showError(error, context = '') {
+                console.error(`${context} error:`, error);
+                const message = error.message || 'Une erreur est survenue';
+                showNotification(message, 'error');
+            }
+        }
+
+        // Amélioration de la fonction playSong
+        async function playSong(videoId, title) {
+            if (!videoId || !title) {
+                showNotification('Données de chanson invalides', 'error');
+                return;
+            }
+
+            updateNowPlaying(title, true);
+            try {
+                const response = await fetch(`/play/${videoId}`);
+                const data = await ErrorHandler.handleResponse(response, 'lecture');
+                
+                audioPlayer.src = data.audio_url;
+                try {
+                    await audioPlayer.play();
+                    updatePlayButton();
+                    updateNowPlaying(title, false);
+                } catch (error) {
+                    if (error.name === 'NotAllowedError') {
+                        showNotification('Lecture audio bloquée par le navigateur', 'error');
+                    } else {
+                        throw error;
+                    }
+                }
+            } catch (error) {
+                ErrorHandler.showError(error, 'Lecture');
+                updateNowPlaying('Erreur de lecture', false);
+            }
+        }
+
+        // Amélioration de la fonction searchSongs
+        async function searchSongs() {
+            const query = searchInput.value.trim();
+            if (!query) {
+                showNotification('Veuillez entrer un terme de recherche', 'error');
+                return;
+            }
+
+            searchLoader.style.display = 'block';
+            try {
+                const response = await fetch('/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+
+                const data = await ErrorHandler.handleResponse(response, 'recherche');
+                if (data.songs && data.songs.length === 0) {
+                    showNotification('Aucun résultat trouvé', 'info');
+                } else {
+                    displaySongs(data.songs);
+                }
+            } catch (error) {
+                ErrorHandler.showError(error, 'Recherche');
+            } finally {
+                searchLoader.style.display = 'none';
+            }
+        }
     </script>
 </body>
 </html>

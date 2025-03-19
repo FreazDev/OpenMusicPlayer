@@ -10,11 +10,18 @@ from datetime import datetime
 import webview
 import threading
 import sys
+import time
 
 
 app = Flask(__name__)
 app.secret_key = '1234567890'  # Add a secret key for session management
-executor = ThreadPoolExecutor(max_workers=5)
+executor = ThreadPoolExecutor(max_workers=10)  # Augmenté à 10 workers
+
+
+# Define file paths
+PLAYLIST_FILE = 'playlists.json'
+THEME_FILE = 'theme.json'
+STATS_FILE = 'stats.json'
 
 # Configuration Spotify
 SPOTIFY_CLIENT_ID = ''
@@ -36,25 +43,58 @@ ydl_opts = {
     'nocheckcertificate': True,
     'ignoreerrors': True,
     'no_call_home': True,
-    'socket_timeout': 10,  # Timeout amélioré
-    'retries': 3  # Nombre de tentatives en cas d'échec
+    'socket_timeout': 15,  # Augmenté pour plus de stabilité
+    'retries': 5,  # Plus de tentatives
+    'max_sleep_interval': 5,  # Limite le temps d'attente entre les tentatives
+    'http_chunk_size': 10485760  # 10MB - Améliore la stabilité du streaming
 }
 
-PLAYLIST_FILE = 'playlists.json'
-THEME_FILE = 'theme.json'
-STATS_FILE = 'stats.json'
-audio_cache = {}  # Cache pour les URLs audio préchargées
+# Configuration du cache
+CACHE_TIMEOUT = 3600  # 1 heure
+MAX_CACHE_SIZE = 100  # Nombre maximum d'entrées dans le cache
+audio_cache = {}
+last_cache_cleanup = time.time()
+
+def cleanup_cache():
+    """Nettoie le cache périodiquement"""
+    global last_cache_cleanup, audio_cache
+    current_time = time.time()
+    
+    if current_time - last_cache_cleanup > 300:  # Toutes les 5 minutes
+        audio_cache = {k: v for k, v in audio_cache.items() 
+                      if current_time - v.get('timestamp', 0) < CACHE_TIMEOUT}
+        while len(audio_cache) > MAX_CACHE_SIZE:
+            audio_cache.pop(next(iter(audio_cache)))
+        last_cache_cleanup = current_time
 
 def get_audio_url(video_id):
+    cleanup_cache()
     try:
+        if video_id in audio_cache:
+            cached = audio_cache[video_id]
+            if time.time() - cached['timestamp'] < CACHE_TIMEOUT:
+                return cached['data']
+        
         with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            if not info:
-                raise Exception("Could not extract video info")
-            return {
-                'url': info.get('url'),
-                'title': info.get('title', 'Unknown Title')
-            }
+            for attempt in range(3):  # 3 tentatives maximum
+                try:
+                    info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                    if info:
+                        data = {
+                            'url': info.get('url'),
+                            'title': info.get('title', 'Unknown Title')
+                        }
+                        audio_cache[video_id] = {
+                            'data': data,
+                            'timestamp': time.time()
+                        }
+                        return data
+                except Exception as e:
+                    if attempt == 2:  # Dernière tentative
+                        raise e
+                    time.sleep(1)  # Attendre avant de réessayer
+        
+        raise Exception("Could not extract video info")
     except Exception as e:
         logging.error(f"Error getting audio URL for {video_id}: {str(e)}")
         return None
@@ -143,31 +183,132 @@ def search():
             print(f"Search error: {str(e)}")
             return jsonify({'success': False, 'error': 'Search failed'})
 
+# Configuration du logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+def is_valid_response(response):
+    """Vérifie si une réponse est valide"""
+    return (
+        response 
+        and isinstance(response, dict)
+        and response.get('success') is not None
+    )
+
+@app.after_request
+def after_request(response):
+    try:
+        if response.status_code == 500:
+            logging.error(f"Server error: {response.get_data(as_text=True)}")
+            return jsonify({
+                'success': False,
+                'error': 'Une erreur est survenue, veuillez réessayer'
+            }), 500
+        
+        # Vérifier que la réponse est bien formatée
+        if response.mimetype == 'application/json':
+            data = response.get_json()
+            if not is_valid_response(data):
+                logging.warning(f"Invalid response format: {data}")
+                return jsonify({
+                    'success': False,
+                    'error': 'Format de réponse invalide'
+                })
+    except Exception as e:
+        logging.error(f"Error in after_request: {str(e)}")
+    
+    return response
+
+@app.errorhandler(Exception)
+def handle_error(error):
+    error_type = type(error).__name__
+    error_msg = str(error)
+    
+    # Handle common HTTP errors
+    if hasattr(error, 'code'):
+        if error.code == 404:
+            return jsonify({
+                'success': False,
+                'error': 'Resource not found'
+            }), 404
+        elif error.code == 400:
+            return jsonify({
+                'success': False,
+                'error': 'Bad request'
+            }), 400
+    
+    # Handle Spotify API errors
+    if isinstance(error, spotipy.SpotifyException):
+        return jsonify({
+            'success': False,
+            'error': 'Spotify API error',
+            'details': error_msg
+        }), 400
+        
+    # Handle download errors
+    if 'DownloadError' in error_type:
+        return jsonify({
+            'success': False,
+            'error': 'Download error',
+            'details': error_msg
+        }), 400
+        
+    # Handle specific error cases
+    if 'NotFound' in error_type:
+        return jsonify({
+            'success': False,
+            'error': 'Resource not found'
+        }), 404
+    
+    # Log unexpected errors
+    logging.error(f"Unexpected error {error_type}: {error_msg}")
+    
+    # Return a generic error for unexpected cases
+    return jsonify({
+        'success': False,
+        'error': 'An error occurred while processing your request',
+        'type': error_type
+    }), 500
+
 @app.route('/play/<video_id>')
 def play(video_id):
     try:
         if not video_id:
-            return jsonify({'success': False, 'error': 'Invalid video ID'})
+            return jsonify({'success': False, 'error': 'ID de vidéo manquant'}), 400
 
-        if video_id in audio_cache:
-            info = audio_cache[video_id]
-            del audio_cache[video_id]
-        else:
-            info = get_audio_url(video_id)
+        start_time = time.time()
+        info = get_audio_url(video_id)
         
-        if not info or not info.get('url'):
-            raise Exception('Could not get audio URL')
+        if time.time() - start_time > 10:
+            logging.warning(f"Réponse lente pour la vidéo {video_id}")
+        
+        if not info:
+            return jsonify({
+                'success': False,
+                'error': 'Impossible d\'obtenir l\'URL audio'
+            }), 404
+            
+        if not info.get('url'):
+            return jsonify({
+                'success': False,
+                'error': 'URL audio non trouvée'
+            }), 404
 
         return jsonify({
             'success': True,
             'audio_url': info['url'],
             'title': info['title']
         })
+        
     except Exception as e:
-        logging.error(f"Play error for video {video_id}: {str(e)}")
+        logging.error(f"Erreur de lecture pour {video_id}: {str(e)}")
+        error_type = type(e).__name__
         return jsonify({
-            'success': False, 
-            'error': 'Stream failed',
+            'success': False,
+            'error': 'Erreur lors de la lecture',
+            'type': error_type,
             'details': str(e)
         }), 500
 
@@ -354,12 +495,6 @@ def save_stats_route():
     except Exception as e:
         logging.error(f"Error in save_stats_route: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
-
-# Gestionnaire d'erreurs global
-@app.errorhandler(Exception)
-def handle_error(error):
-    logging.error(f"Unhandled error: {str(error)}")
-    return jsonify({'success': False, 'error': 'An unexpected error occurred'})
 
 def start_server():
     app.run(debug=False, threaded=True, port=5000)
