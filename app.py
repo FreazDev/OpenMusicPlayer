@@ -143,7 +143,12 @@ def search():
 @app.route('/play/<video_id>')
 def play(video_id):
     try:
-        info = get_audio_url(video_id)
+        if video_id in audio_cache:
+            info = audio_cache[video_id]
+            del audio_cache[video_id]  # Libérer la mémoire après utilisation
+        else:
+            info = get_audio_url(video_id)
+        
         if info and info.get('url'):
             return jsonify({
                 'success': True,

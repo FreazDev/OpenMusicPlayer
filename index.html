@@ -31,7 +31,7 @@
 
         .spotify-import-btn:hover, .download-btn:hover, .playlist-btn:hover, .theme-btn:hover {
             background-color: var(--primary-color, #fca606);
-            transform: scale(1.02);
+            transform: scale(1.01);
         }
 
         body {
@@ -119,17 +119,40 @@
             background-color: var(--song-card-color, #181818);
             padding: 15px;
             border-radius: 8px;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
             position: relative;
             display: flex;
             align-items: center;
             justify-content: space-between;
             margin-bottom: 8px;
+            transform-origin: left center;
         }
 
         .song-card:hover {
             background-color: var(--song-card-hover-color, #282828);
-            transform: translateX(5px);
+            transform: translateX(2px) scale(1.01);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .song-card.playing {
+            background-color: var(--song-card-playing-color, #000000);
+            border: 1px solid var(--primary-color, #fca606);
+            position: relative;
+            padding-left: 20px;
+        }
+
+        .song-card.playing::before {
+            content: '▶';
+            position: absolute;
+            left: 8px;
+            color: var(--primary-color, #fca606);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.8; }
+            50% { opacity: 1; }
+            100% { opacity: 0.8; }
         }
 
         .song-title {
@@ -181,7 +204,7 @@
 
         .play-btn:hover, .add-to-playlist-btn:hover {
             background-color: var(--primary-color, #fca606);
-            transform: scale(1.05);
+            transform: scale(1.02);
         }
 
         .player-controls {
@@ -207,7 +230,7 @@
         }
 
         .control-btn:hover {
-            transform: scale(1.1);
+            transform: scale(1.05);
         }
 
         #progress-bar {
@@ -293,7 +316,7 @@
 
         .playlist-option:hover {
             background-color: var(--playlist-option-hover-color, #404040);
-            transform: translateX(5px);
+            transform: translateX(2px);
         }
 
         .context-menu {
@@ -340,15 +363,33 @@
             margin: 8px 0;
             border-radius: 4px;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
             display: flex;
             align-items: center;
             gap: 10px;
+            position: relative;
+            overflow: hidden;
         }
 
         .playlist-item:hover {
             background-color: var(--playlist-item-hover-color, #383828);
-            transform: translateX(5px);
+            transform: translateX(2px) scale(1.01);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .playlist-item::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+            transition: 0.3s;
+        }
+
+        .playlist-item:hover::after {
+            left: 100%;
         }
 
         .notification {
@@ -373,10 +414,10 @@
         }
 
         @keyframes fadeInOut {
-            0% { opacity: 0; transform: translateY(20px); }
+            0% { opacity: 0; transform: translateY(10px); }
             10% { opacity: 1; transform: translateY(0); }
             90% { opacity: 1; transform: translateY(0); }
-            100% { opacity: 0; transform: translateY(-20px); }
+            100% { opacity: 0; transform: translateY(-10px); }
         }
 
         .playlist-header {
@@ -411,7 +452,7 @@
 
         .playlist-play-btn:hover {
             background-color: var(--primary-color, #fca606);
-            transform: scale(1.05);
+            transform: scale(1.02);
         }
 
         .now-playing {
@@ -503,7 +544,7 @@
 
         .theme-option:hover {
             background-color: var(--playlist-option-hover-color, #404040);
-            transform: translateX(5px);
+            transform: translateX(2px);
         }
 
         .color-picker-container {
@@ -708,6 +749,12 @@
         audioPlayer.addEventListener('timeupdate', () => {
             const progress = (audioPlayer.currentTime / audioPlayer.duration) * 100;
             progressBar.style.width = `${progress}%`;
+            
+            // Précharger la prochaine chanson quand on arrive à 80% de la chanson actuelle
+            if (progress > 80 && currentPlaylist.length > currentTrackIndex + 1) {
+                const nextSong = currentPlaylist[currentTrackIndex + 1];
+                fetch(`/play/${nextSong.id}`);
+            }
         });
 
         // Gestionnaires d'événements des contrôles
@@ -816,14 +863,15 @@
                 `;
             }
 
-            songs.forEach(song => {
+            songs.forEach((song, index) => {
+                const isPlaying = currentPlaylist === songs && currentTrackIndex === index;
                 const card = document.createElement('div');
-                card.className = 'song-card';
+                card.className = `song-card ${isPlaying ? 'playing' : ''}`;
                 card.innerHTML = `
                     <div class="song-title">${song.title}</div>
                     <div class="song-controls">
                         <button class="play-btn" onclick="playSong('${song.id}', '${song.title.replace(/'/g, "\\'")}')">
-                            <i class="fas fa-play"></i> Play
+                            <i class="fas fa-${isPlaying ? 'pause' : 'play'}"></i> ${isPlaying ? 'Pause' : 'Play'}
                         </button>
                         ${!playlistName ? `
                             <button class="add-to-playlist-btn" onclick="showPlaylistModal('${song.id}', '${song.title.replace(/'/g, "\\'")}')">
@@ -854,6 +902,16 @@
                 const data = await response.json();
                 
                 if (data.success) {
+                    // Mettre à jour l'affichage des chansons pour marquer celle en cours
+                    const songCards = document.querySelectorAll('.song-card');
+                    songCards.forEach(card => card.classList.remove('playing'));
+                    const currentCard = Array.from(songCards).find(card => 
+                        card.querySelector('.play-btn').getAttribute('onclick').includes(videoId)
+                    );
+                    if (currentCard) {
+                        currentCard.classList.add('playing');
+                    }
+
                     audioPlayer.src = data.audio_url;
                     try {
                         await audioPlayer.play();
@@ -886,7 +944,11 @@
                     currentPlaylist = data.playlist;
                     currentTrackIndex = 0;
                     if (currentPlaylist.length > 0) {
-                        playSong(currentPlaylist[0].id, currentPlaylist[0].title);
+                        await playSong(currentPlaylist[0].id, currentPlaylist[0].title);
+                        // Précharger la prochaine chanson
+                        if (currentPlaylist.length > 1) {
+                            fetch(`/play/${currentPlaylist[1].id}`);
+                        }
                     }
                 } else {
                     showNotification(data.error || 'Échec de la lecture de la playlist', 'error');
