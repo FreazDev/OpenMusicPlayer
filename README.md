@@ -1,16 +1,18 @@
-# 🎶 OpenMusicPlayer 🎧
+![image](https://github.com/user-attachments/assets/69a792b4-0796-4bce-9f95-fa4c9df63a5d)# 🎶 OpenMusicPlayer 🎧
 
 **OpenMusicPlayer** est une application gratuite et open-source pour gérer des playlists musicales en utilisant **YouTube** et **Spotify**. Elle vous permet de rechercher des chansons sur YouTube, d'importer des playlists depuis Spotify, de créer vos propres playlists, et d'écouter vos chansons en streaming directement depuis l'application ! 🎵
 
 
-## 🚀 Fonctionnalités
-- 🔍 Recherche de musique sur **YouTube**
-- 🎶 Importation de playlists depuis **Spotify**
-- ➕ Création et gestion de playlists personnalisées
-- 🎧 Lecture audio en streaming depuis **YouTube**
-- 💾 Stockage local des playlists
+## 🚀 Fonctionnalités  
+- 🔍 **Recherche Intelligente** : trouvez et écoutez vos morceaux préférés.  
+- 🎶 **Importation Spotify** : intégrez facilement vos playlists Spotify.  
+- ➕ **Playlists personnalisées** : créez, gérez et modifiez vos propres playlists.  
+- 🎧 **Lecture en streaming** : écoutez de la musique directement depuis OpenMusicPlayer.  
+- 💾 **Stockage local** : enregistrez vos playlists pour un accès rapide.  
+- 🎨 **Personnalisation** : choisissez un thème (**clair/sombre**) et une couleur principale.  
+- 📊 **Statistiques d'écoute** : suivez automatiquement votre activité musicale.  
 
-![OpenMusicPlayer](https://i.ibb.co/z3m9SdL/image.png)
+![OpenMusicPlayer]([https://i.ibb.co/z3m9SdL/image.png](https://i.ibb.co/Qv97xDRF/image.png))
 
 ---
 
@@ -31,7 +33,7 @@
 3. **Obtenez vos identifiants** :
    - Après avoir créé l'application, vous trouverez votre **Client ID** et **Client Secret** dans les paramètres de l'application. 🆔
 
-   ![OpenMusicPlayer-Playlist](https://i.ibb.co/Ps29cfQg/image.png)
+   ![OpenMusicPlayer-Playlist]([https://i.ibb.co/Ps29cfQg/image.png](https://i.ibb.co/tMsMkYtY/image.png))
 
 ---
 
