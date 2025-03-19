@@ -6,16 +6,19 @@ from concurrent.futures import ThreadPoolExecutor
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import logging
-import zipfile
 from datetime import datetime
+import webview
+import threading
+import sys
+
 
 app = Flask(__name__)
 app.secret_key = '1234567890'  # Add a secret key for session management
 executor = ThreadPoolExecutor(max_workers=5)
 
 # Configuration Spotify
-SPOTIFY_CLIENT_ID = ''
-SPOTIFY_CLIENT_SECRET = ''
+SPOTIFY_CLIENT_ID = '7b0ec8040813480887b5d5e6180c1993'
+SPOTIFY_CLIENT_SECRET = 'ada62d5ebed645c68bf6e2562a014ebf'
 
 # Initialisation de l'API Spotify
 sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
@@ -143,22 +146,30 @@ def search():
 @app.route('/play/<video_id>')
 def play(video_id):
     try:
+        if not video_id:
+            return jsonify({'success': False, 'error': 'Invalid video ID'})
+
         if video_id in audio_cache:
             info = audio_cache[video_id]
-            del audio_cache[video_id]  # Libérer la mémoire après utilisation
+            del audio_cache[video_id]
         else:
             info = get_audio_url(video_id)
         
-        if info and info.get('url'):
-            return jsonify({
-                'success': True,
-                'audio_url': info['url'],
-                'title': info['title']
-            })
-        return jsonify({'success': False, 'error': 'Could not get audio URL'})
+        if not info or not info.get('url'):
+            raise Exception('Could not get audio URL')
+
+        return jsonify({
+            'success': True,
+            'audio_url': info['url'],
+            'title': info['title']
+        })
     except Exception as e:
-        logging.error(f"Play error: {str(e)}")
-        return jsonify({'success': False, 'error': 'Stream failed'})
+        logging.error(f"Play error for video {video_id}: {str(e)}")
+        return jsonify({
+            'success': False, 
+            'error': 'Stream failed',
+            'details': str(e)
+        }), 500
 
 @app.route('/save-theme', methods=['POST'])
 def save_theme():
@@ -350,5 +361,20 @@ def handle_error(error):
     logging.error(f"Unhandled error: {str(error)}")
     return jsonify({'success': False, 'error': 'An unexpected error occurred'})
 
+def start_server():
+    app.run(debug=False, threaded=True, port=5000)
+
 if __name__ == '__main__':
-    app.run(debug=True, threaded=True, host='127.0.0.1', port=5000)
+    # Start Flask server in a separate thread
+    server_thread = threading.Thread(target=start_server)
+    server_thread.daemon = True
+    server_thread.start()
+
+    # Create and start webview window
+    webview.create_window("OpenPy Music Player", 
+                         "http://127.0.0.1:5000",
+                         width=1200,
+                         height=800,
+                         resizable=True)
+    webview.start()
+    sys.exit()

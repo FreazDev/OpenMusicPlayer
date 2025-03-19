@@ -696,6 +696,62 @@
     </div>
 
     <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize player
+            let audio = new Audio();
+            let currentSong = null;
+
+            // Error handling for audio
+            audio.onerror = function(e) {
+                console.error('Audio error:', e);
+                // Retry playback or show error message
+                if (currentSong) {
+                    playNextSong();
+                }
+            };
+
+            // Playback handling
+            function playSong(songId) {
+                if (!songId) return;
+                
+                fetch(`/play/${songId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.audio_url) {
+                            currentSong = songId;
+                            audio.src = data.audio_url;
+                            audio.play()
+                                .catch(err => {
+                                    console.error('Playback failed:', err);
+                                    playNextSong();
+                                });
+                        }
+                    })
+                    .catch(err => console.error('Error fetching song:', err));
+            }
+
+            // DOM elements reference after load
+            const playerElements = {
+                searchResults: document.getElementById('searchResults'),
+                player: document.getElementById('player'),
+                // Add other element references here
+            };
+
+            // Style updates with null checks
+            function updateStyles(element, styles) {
+                if (element && styles) {
+                    Object.assign(element.style, styles);
+                }
+            }
+
+            // Initialize UI
+            function initializeUI() {
+                // Add your UI initialization code here
+            }
+
+            initializeUI();
+        });
+
         let currentPlaylist = [];
         let currentTrackIndex = 0;
         let currentContextPlaylist = '';
