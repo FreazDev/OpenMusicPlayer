@@ -17,8 +17,8 @@ app.secret_key = '1234567890'  # Add a secret key for session management
 executor = ThreadPoolExecutor(max_workers=5)
 
 # Configuration Spotify
-SPOTIFY_CLIENT_ID = '7b0ec8040813480887b5d5e6180c1993'
-SPOTIFY_CLIENT_SECRET = 'ada62d5ebed645c68bf6e2562a014ebf'
+SPOTIFY_CLIENT_ID = ''
+SPOTIFY_CLIENT_SECRET = ''
 
 # Initialisation de l'API Spotify
 sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
