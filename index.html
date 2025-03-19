@@ -948,8 +948,26 @@
             });
         }
 
+        function updateNowPlaying(title, isLoading = false) {
+            const container = document.getElementById('now-playing-container');
+            if (isLoading) {
+                container.innerHTML = `
+                    <div class="now-playing">
+                        <i class="fas fa-spinner fa-spin"></i> Chargement...
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div class="now-playing">
+                        <i class="fas fa-music"></i> En lecture : ${title}
+                    </div>
+                `;
+            }
+        }
+
         async function playSong(videoId, title) {
             retryCount = 0;
+            updateNowPlaying(title, true); // Afficher le chargement
             try {
                 const response = await fetch(`/play/${videoId}`);
                 if (!response.ok) {
@@ -972,7 +990,7 @@
                     try {
                         await audioPlayer.play();
                         updatePlayButton();
-                        updateNowPlaying(title);
+                        updateNowPlaying(title, false); // Retirer le chargement
                     } catch (error) {
                         console.error('Playback failed:', error);
                         if (retryCount < maxRetries) {
@@ -989,6 +1007,7 @@
             } catch (error) {
                 console.error('Failed to play song:', error);
                 showNotification('Échec de la lecture', 'error');
+                updateNowPlaying('Erreur de lecture', false);
             }
         }
 
@@ -1018,15 +1037,6 @@
         function updatePlayButton() {
             const icon = playBtn.querySelector('i');
             icon.className = audioPlayer.paused ? 'fas fa-play' : 'fas fa-pause';
-        }
-
-        function updateNowPlaying(title) {
-            const container = document.getElementById('now-playing-container');
-            container.innerHTML = `
-                <div class="now-playing">
-                    <i class="fas fa-music"></i> En lecture : ${title}
-                </div>
-            `;
         }
 
         function showContextMenu(x, y, type, data) {
@@ -1258,7 +1268,7 @@
                 return;
             }
             
-            showNotification('Importation en cours...', 'info');
+            const importNotification = showNotification('Importation en cours...', 'info', false);
             
             try {
                 const response = await fetch('/import-spotify', {
@@ -1270,6 +1280,8 @@
                 });
                 
                 const data = await response.json();
+                importNotification.remove(); // Supprimer la notification d'importation
+                
                 if (data.success) {
                     showNotification(data.message);
                     loadPlaylists();
@@ -1277,6 +1289,7 @@
                     showNotification(data.error || 'Échec de l\'importation', 'error');
                 }
             } catch (error) {
+                importNotification.remove(); // Supprimer la notification en cas d'erreur
                 console.error('Import failed:', error);
                 showNotification('Échec de l\'importation', 'error');
             }
@@ -1404,12 +1417,17 @@
             }
         }
 
-        function showNotification(message, type = 'success') {
+        function showNotification(message, type = 'success', autoRemove = true) {
             const notification = document.createElement('div');
             notification.className = `notification ${type}`;
             notification.textContent = message;
             document.body.appendChild(notification);
-            setTimeout(() => notification.remove(), 3000);
+            
+            if (autoRemove) {
+                setTimeout(() => notification.remove(), 3000);
+            }
+            
+            return notification;
         }
 
         // Statistiques d'écoute
