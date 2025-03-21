@@ -11,17 +11,29 @@ import webview
 import threading
 import sys
 import time
-
+import pystray
+from PIL import Image, ImageDraw
 
 app = Flask(__name__)
 app.secret_key = '1234567890'  # Add a secret key for session management
 executor = ThreadPoolExecutor(max_workers=10)  # Augmenté à 10 workers
 
+# Define directories and files paths
+DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), 'downloads')
+CACHE_DIR = os.path.join(os.path.dirname(__file__), 'cache')
+PLAYLIST_FILE = os.path.join(os.path.dirname(__file__), 'playlists.json')
+THEME_FILE = os.path.join(os.path.dirname(__file__), 'theme.json')
+STATS_FILE = os.path.join(os.path.dirname(__file__), 'stats.json')
 
-# Define file paths
-PLAYLIST_FILE = 'playlists.json'
-THEME_FILE = 'theme.json'
-STATS_FILE = 'stats.json'
+# Create necessary directories
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+# Constants
+MAX_PLAYLIST_SIZE = 1000
+ALLOWED_AUDIO_FORMATS = ['m4a', 'mp3', 'wav']
+CACHE_TIMEOUT = 3600  # 1 hour
+MAX_CACHE_SIZE = 100
 
 # Configuration Spotify
 SPOTIFY_CLIENT_ID = ''
@@ -46,12 +58,27 @@ ydl_opts = {
     'socket_timeout': 15,  # Augmenté pour plus de stabilité
     'retries': 5,  # Plus de tentatives
     'max_sleep_interval': 5,  # Limite le temps d'attente entre les tentatives
-    'http_chunk_size': 10485760  # 10MB - Améliore la stabilité du streaming
+    'http_chunk_size': 10485760,  # 10MB - Améliore la stabilité du streaming
+    'cachedir': CACHE_DIR,
+    'prefer_ffmpeg': True,
+    'postprocessors': [{
+        'key': 'FFmpegExtractAudio',
+        'preferredcodec': 'm4a',
+        'preferredquality': '192',
+    }]
 }
 
-# Configuration du cache
-CACHE_TIMEOUT = 3600  # 1 heure
-MAX_CACHE_SIZE = 100  # Nombre maximum d'entrées dans le cache
+# Configuration du logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(os.path.dirname(__file__), 'app.log')),
+        logging.StreamHandler()
+    ]
+)
+
+# Cache initialization
 audio_cache = {}
 last_cache_cleanup = time.time()
 
@@ -113,7 +140,7 @@ def load_playlists():
 
 def save_playlists(playlists):
     with open(PLAYLIST_FILE, 'w') as f:
-        json.dump(playlists, f)
+        json.dump(playlists, f, indent=2)
 
 def load_stats():
     default_stats = {
@@ -523,20 +550,95 @@ def save_stats_route():
         logging.error(f"Error in save_stats_route: {str(e)}")
         return jsonify({'success': False, 'error': str(e)})
 
+# Nouvelles fonctions utilitaires
+def clean_filename(filename):
+    """Nettoie un nom de fichier des caractères invalides"""
+    return "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_')).strip()
+
+def get_file_size(filepath):
+    """Retourne la taille d'un fichier en Mo"""
+    try:
+        return os.path.getsize(filepath) / (1024 * 1024)
+    except:
+        return 0
+
+def cleanup_downloads():
+    """Nettoie les fichiers téléchargés trop anciens"""
+    try:
+        for file in os.listdir(DOWNLOAD_DIR):
+            filepath = os.path.join(DOWNLOAD_DIR, file)
+            if time.time() - os.path.getctime(filepath) > 86400:  # 24h
+                os.remove(filepath)
+    except Exception as e:
+        logging.error(f"Erreur nettoyage downloads: {e}")
+
+@app.route('/playlist/<name>/shuffle', methods=['POST'])
+def shuffle_playlist(name):
+    try:
+        if name not in playlists:
+            return jsonify({'success': False, 'error': 'Playlist non trouvée'})
+            
+        import random
+        shuffled = playlists[name].copy()
+        random.shuffle(shuffled)
+        playlists[name] = shuffled
+        save_playlists(playlists)
+        
+        return jsonify({'success': True, 'playlist': shuffled})
+    except Exception as e:
+        logging.error(f"Erreur shuffle: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+# Amélioration de la gestion des erreurs
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({
+        'success': False,
+        'error': 'Fichier trop volumineux'
+    }), 413
+
+@app.errorhandler(429)
+def too_many_requests(error):
+    return jsonify({
+        'success': False,
+        'error': 'Trop de requêtes'
+    }), 429
+
 def start_server():
-    app.run(debug=False, threaded=True, port=5000)
+    """Démarre le serveur Flask"""
+    app.run(host='127.0.0.1', port=5000, debug=False, threaded=True)
 
+# Amélioration de la fonction principale
 if __name__ == '__main__':
-    # Start Flask server in a separate thread
-    server_thread = threading.Thread(target=start_server)
-    server_thread.daemon = True
-    server_thread.start()
+    try:
+        # Nettoyage initial
+        cleanup_downloads()
+        cleanup_cache()
+        
+        # Démarrage du serveur
+        server_thread = threading.Thread(target=start_server, daemon=True)
+        server_thread.start()
 
-    # Create and start webview window
-    webview.create_window("OpenPy Music Player", 
-                         "http://127.0.0.1:5000",
-                         width=1200,
-                         height=800,
-                         resizable=True)
-    webview.start()
-    sys.exit()
+        # Configuration de la fenêtre
+        window = webview.create_window(
+            "OpenPy Music Player",
+            "http://127.0.0.1:5000",
+            width=1200,
+            height=800,
+            resizable=True,
+            min_size=(800, 600)
+        )
+        
+        # Gestionnaire de fermeture
+        def on_closing():
+            cleanup_downloads()
+            cleanup_cache()
+            os._exit(0)
+            
+        window.events.closing += on_closing
+        webview.start(debug=False)
+        sys.exit()
+        
+    except Exception as e:
+        logging.error(f"Erreur fatale: {e}")
+        sys.exit(1)

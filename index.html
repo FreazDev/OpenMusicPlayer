@@ -12,7 +12,7 @@
             box-sizing: border-box;
         }
 
-        .spotify-import-btn, .download-btn, .playlist-btn, .theme-btn {
+        .spotify-import-btn, .download-btn, .playlist-btn, .theme-btn, .shuffle-btn {
             background-color: var(--primary-color, #fca606);
             color: white;
             border: none;
@@ -29,7 +29,7 @@
             transition: all 0.3s ease;
         }
 
-        .spotify-import-btn:hover, .download-btn:hover, .playlist-btn:hover, .theme-btn:hover {
+        .spotify-import-btn:hover, .download-btn:hover, .playlist-btn:hover, .theme-btn:hover, .shuffle-btn:hover {
             background-color: var(--primary-color, #fca606);
             transform: scale(1.01);
         }
@@ -573,6 +573,23 @@
         .stats-value {
             color: var(--primary-color, #fca606);
         }
+
+        @media (max-width: 768px) {
+            .container {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr 90px;
+            }
+            
+            .sidebar {
+                grid-row: 1;
+                padding: 10px;
+            }
+            
+            .player {
+                grid-row: 3;
+                padding: 10px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -601,6 +618,9 @@
             </button>
             <button class="theme-btn" onclick="openThemeModal()">
                 <i class="fas fa-palette"></i> Changer le thème
+            </button>
+            <button class="shuffle-btn" onclick="shuffleCurrentPlaylist()" id="shuffle-btn" style="display: none;">
+                <i class="fas fa-random"></i> Lecture aléatoire
             </button>
         </div>
 
@@ -996,47 +1016,25 @@
         }
 
         async function playSong(videoId, title) {
-            retryCount = 0;
-            updateNowPlaying(title, true); // Afficher le chargement
-            try {
-                const response = await fetch(`/play/${videoId}`);
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                const data = await response.json();
-                
-                if (data.success) {
-                    // Mettre à jour l'affichage des chansons pour marquer celle en cours
-                    const songCards = document.querySelectorAll('.song-card');
-                    songCards.forEach(card => card.classList.remove('playing'));
-                    const currentCard = Array.from(songCards).find(card => 
-                        card.querySelector('.play-btn').getAttribute('onclick').includes(videoId)
-                    );
-                    if (currentCard) {
-                        currentCard.classList.add('playing');
-                    }
+            if (!videoId || !title) {
+                showNotification('Données de chanson invalides', 'error');
+                return;
+            }
 
-                    audioPlayer.src = data.audio_url;
-                    try {
-                        await audioPlayer.play();
-                        updatePlayButton();
-                        updateNowPlaying(title, false); // Retirer le chargement
-                    } catch (error) {
-                        console.error('Playback failed:', error);
-                        if (retryCount < maxRetries) {
-                            retryCount++;
-                            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
-                            await playSong(videoId, title);
-                        } else {
-                            showNotification('Échec de la lecture', 'error');
-                        }
-                    }
-                } else {
-                    throw new Error(data.error || 'Échec de la lecture');
+            updateNowPlaying(title, true);
+
+            try {
+                const audioUrl = await getAudioUrlWithCache(videoId);
+                if (!audioUrl) {
+                    throw new Error('URL audio non trouvée');
                 }
+
+                audioPlayer.src = audioUrl;
+                await audioPlayer.play();
+                updatePlayButton();
+                updateNowPlaying(title, false);
             } catch (error) {
-                console.error('Failed to play song:', error);
-                showNotification('Échec de la lecture', 'error');
+                ErrorHandler.showError(error, 'Lecture');
                 updateNowPlaying('Erreur de lecture', false);
             }
         }
@@ -1701,56 +1699,86 @@
             }
 
             updateNowPlaying(title, true);
+
             try {
-                const response = await fetch(`/play/${videoId}`);
-                const data = await ErrorHandler.handleResponse(response, 'lecture');
-                
-                audioPlayer.src = data.audio_url;
-                try {
-                    await audioPlayer.play();
-                    updatePlayButton();
-                    updateNowPlaying(title, false);
-                } catch (error) {
-                    if (error.name === 'NotAllowedError') {
-                        showNotification('Lecture audio bloquée par le navigateur', 'error');
-                    } else {
-                        throw error;
-                    }
+                const audioUrl = await getAudioUrlWithCache(videoId);
+                if (!audioUrl) {
+                    throw new Error('URL audio non trouvée');
                 }
+
+                audioPlayer.src = audioUrl;
+                await audioPlayer.play();
+                updatePlayButton();
+                updateNowPlaying(title, false);
             } catch (error) {
                 ErrorHandler.showError(error, 'Lecture');
                 updateNowPlaying('Erreur de lecture', false);
             }
         }
 
-        // Amélioration de la fonction searchSongs
-        async function searchSongs() {
-            const query = searchInput.value.trim();
-            if (!query) {
-                showNotification('Veuillez entrer un terme de recherche', 'error');
+        async function shuffleCurrentPlaylist() {
+            if (!currentContextPlaylist) {
+                showNotification('Aucune playlist sélectionnée', 'error');
                 return;
             }
-
-            searchLoader.style.display = 'block';
+            
             try {
-                const response = await fetch('/search', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query })
+                const response = await fetch(`/playlist/${currentContextPlaylist}/shuffle`, {
+                    method: 'POST'
                 });
-
-                const data = await ErrorHandler.handleResponse(response, 'recherche');
-                if (data.songs && data.songs.length === 0) {
-                    showNotification('Aucun résultat trouvé', 'info');
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentPlaylist = data.playlist;
+                    showPlaylist(currentContextPlaylist);
+                    showNotification('Playlist mélangée');
                 } else {
-                    displaySongs(data.songs);
+                    throw new Error(data.error);
                 }
             } catch (error) {
-                ErrorHandler.showError(error, 'Recherche');
-            } finally {
-                searchLoader.style.display = 'none';
+                showNotification('Erreur lors du mélange', 'error');
             }
         }
+
+        // Amélioration de la gestion des erreurs réseau
+        window.addEventListener('offline', () => {
+            showNotification('Connexion perdue', 'error');
+        });
+
+        window.addEventListener('online', () => {
+            showNotification('Connexion rétablie', 'success');
+        });
+
+        // Amélioration de la gestion du cache audio
+        const audioCache = new Map();
+        const MAX_CACHE_SIZE = 50;
+
+        function cacheAudioUrl(songId, url) {
+            if (audioCache.size >= MAX_CACHE_SIZE) {
+                const firstKey = audioCache.keys().next().value;
+                audioCache.delete(firstKey);
+            }
+            audioCache.set(songId, {
+                url,
+                timestamp: Date.now()
+            });
+        }
+
+        async function getAudioUrlWithCache(songId) {
+            const cached = audioCache.get(songId);
+            if (cached && Date.now() - cached.timestamp < 3600000) {
+                return cached.url;
+            }
+            
+            const response = await fetch(`/play/${songId}`);
+            const data = await response.json();
+            if (data.success) {
+                cacheAudioUrl(songId, data.audio_url);
+                return data.audio_url;
+            }
+            return null;
+        }
+
     </script>
 </body>
 </html>
